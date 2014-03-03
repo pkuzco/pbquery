@@ -222,7 +222,7 @@ def function_call(node, context):
 def eval_predicate(node, context):
     result = matchers[node.children[0].type](node.children[0], context)
 
-    print "predicate", result.__class__, result
+    #print "predicate", result.__class__, result
 
     if isinstance(result, bool):
         return result
@@ -259,12 +259,23 @@ def eval_unary_expr(node, context):
 
 
 def eval_bin_op(node, context):
-    lvalue = eval_unary_expr(node.children[0], context)
-    op = get_string(node.children[1])
-    rvalue = eval_unary_expr(node.children[2], context)
-    print "lvalue", lvalue
-    print "rvalue", rvalue
-    return operators[op](lvalue, rvalue)
+    state = 0
+    lvalue = 0
+
+    for c in node.children:
+        if state == 0:
+            lvalue = eval_unary_expr(c, context)
+            state = 1
+        elif state == 1:
+            op = get_string(c)
+            state = 2
+        elif state == 2:
+            rvalue = eval_unary_expr(c, context)
+            state = 1
+            lvalue = operators[op](lvalue, rvalue)
+
+    print "result", lvalue
+    return lvalue
 
 
 def match_primary_expr(node, context):
