@@ -1,7 +1,8 @@
 import operator
 import math
 import waxeye
-from parsers.parser import Parser as P
+from parsers.parser import Parser
+from itertools import chain
 
 
 axes = {
@@ -91,12 +92,16 @@ def axis_child(context, field_filter):
     fields = context['value'].ListFields()
 
     for f_meta, f_value in fields:
-        if f_meta.type == f_meta.TYPE_MESSAGE:
-            if match_node_test(field_filter, dict(meta=f_meta, value=f_value, pos=0, size=0)):
-                if f_meta.label == f_meta.LABEL_REPEATED:
-                    map(lambda f: field_set.append(dict(meta=f_meta, value=f, pos=0, size=0)), f_value)
-                else:
-                    field_set.append(dict(meta=f_meta, value=f_value, pos=0, size=0))
+        if f_meta.type != f_meta.TYPE_MESSAGE:
+            continue
+
+        if not match_node_test(field_filter, dict(meta=f_meta, value=f_value, pos=0, size=0)):
+            continue
+
+        if f_meta.label == f_meta.LABEL_REPEATED:
+            map(lambda f: field_set.append(dict(meta=f_meta, value=f, pos=0, size=0)), f_value)
+        else:
+            field_set.append(dict(meta=f_meta, value=f_value, pos=0, size=0))
 
     return field_set
 
@@ -132,9 +137,8 @@ def axis_descendant(context, field_filter):
     result = []
     walking_set = get_children(context)
 
-    for f in walking_set:
-        if match_node_test(field_filter, f):
-            result.append(f)
+    match_filter = functools.partial(match_node_test, field_filter)
+    result = filter(match_filter, walking_set)
 
     for f in walking_set:
         result.extend(axis_descendant(f, field_filter))
@@ -209,14 +213,10 @@ def string_length(node, context):
 def function_call(node, context):
     function_name = get_string(node.children[0])
 
-    args = []
+    args = map(lambda c: matchers[c.type](c, context), node.children[1:])
 
-    for c in node.children[1:]:
-        a = matchers[c.type](c, context)
-        args.append(a)
-
-    print ">>>>>>>>", functions[function_name](context, *args)
-    return functions[function_name](context, *args)
+    func = functions.get(function_name, lambda context, *args: exception(function_name))
+    return func(context, *args)
 
 
 def eval_predicate(node, context):
@@ -400,7 +400,7 @@ def get_integer(ast_node):
     return int(get_string(ast_node))
 
 
-def match_path(ast_node, context):
+def _match_path(ast_node, context):
     node_set = [context]
     anywhere = False
 
@@ -409,11 +409,11 @@ def match_path(ast_node, context):
             anywhere = True
         elif c.type == 'step':
             result = []
-            for f in node_set:
+            for node in node_set:
                 if anywhere:
-                    result.extend(match_step_anywhere(c, f))
+                    result.extend(match_step_anywhere(c, node))
                 else:
-                    result.extend(match_step(c, f))
+                    result.extend(match_step(c, node))
 
             anywhere = False
             node_set = result
@@ -421,17 +421,18 @@ def match_path(ast_node, context):
     return node_set
 
 
-def process(ast_node, context):
-    node_set = []
+def _evaluate(ast_node, context):
+    '''Performs the actual evaluation on a query's AST'''
 
-    for c in ast_node.children:
-        node_set.extend(match_path(c, context))
-
-    return node_set
+    return chain.from_iterable((_match_path(c, context) for c in ast_node.children))
 
 
-def query(msg, path):
-    ast = P().parse(path)
+def query(msg, xpath):
+    '''Evaluates PbQuery expressions (XPath-like queries)'''
+
+    result_set = []
+
+    ast = Parser().parse(path)
     if isinstance(ast, waxeye.ParseError):
         raise InvalidQueryException(str(ast))
     else:
@@ -440,6 +441,14 @@ def query(msg, path):
         msg.DESCRIPTOR.type = msg.DESCRIPTOR.TYPE_MESSAGE
         msg.DESCRIPTOR.label = msg.DESCRIPTOR.LABEL_REQUIRED
 
-        result = process(ast, dict(meta=msg.DESCRIPTOR, value=msg, pos=1, size=1))
+        node_context = {'meta' = msg.DESCRIPTOR, 'value' = msg, 'pos' = 1, 'size' = 1}
 
-        return [p['value'] for p in result]
+        result_set = _evaluate(ast, node_context)
+
+    return [node['value'] for node in result_set]
+
+
+def xpath(msg, xpath):
+    '''Alias function name for query'''
+
+    return query(msg, xpath)
