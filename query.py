@@ -3,6 +3,7 @@ import math
 import waxeye
 from parsers.parser import Parser
 from itertools import chain
+import functools
 
 
 axes = {
@@ -44,19 +45,28 @@ functions = {
     'last'                  : lambda context, *args: context['size'],
     'position'              : lambda context, *args: context['pos'],
     'count'                 : lambda context, *args: len(args[0]),
+    'local-name'            : lambda context, *args: "[!!NOT IMPLEMENTED YET!!]",
+    'name'                  : lambda context, *args: "[!!NOT IMPLEMENTED YET!!]",
+    'string'                : lambda context, *args: unicode(args[0]),
+    'concat'                : lambda context, *args: ''.join(args),
+    'starts-with'           : lambda context, *args: "[!!NOT IMPLEMENTED YET!!]",
+    'contains'              : lambda context, *args: args[1] in args[0],
+    'substring-before'      : lambda context, *args: substring_before(context, *args),
+    'substring-after'       : lambda context, *args: substring_after(context, *args),
+    'substring'             : lambda context, *args: "[!!NOT IMPLEMENTED YET!!]",
+    'string-length'         : lambda context, *args: len(args[0]),
+    'normalize-space'       : lambda context, *args: "[!!NOT IMPLEMENTED YET!!]",
+    'translate'             : lambda context, *args: "[!!NOT IMPLEMENTED YET!!]",
+    'boolean'               : lambda context, *args: bool(args[0]),
     'not'                   : lambda context, *args: not bool(args[0]),
     'true'                  : lambda context, *args: True,
     'false'                 : lambda context, *args: False,
     'lang'                  : lambda context, *args: False,
-    'string-length'         : lambda context, *args: len(args[0]),
-    'concat'                : lambda context, *args: ''.join(args),
-    'contains'              : lambda context, *args: args[0] in args[1],
-    'substring-before'      : lambda context, *args: substring_before(context, *args),
-    'substring-after'       : lambda context, *args: substring_after(context, *args),
+    'number'                : lambda context, *args: "[!!NOT IMPLEMENTED YET!!]",
     'sum'                   : lambda context, *args: sum((float(x['value']) for x in args[0])),
     'floor'                 : lambda context, *args: math.floor(args[0]),
     'ceiling'               : lambda context, *args: math.ceil(args[0]),
-    'round'                 : lambda context, *args: round(args[0]),
+    'round'                 : lambda context, *args: round(args[0])
 }
 
 
@@ -274,7 +284,6 @@ def eval_bin_op(node, context):
             state = 1
             lvalue = operators[op](lvalue, rvalue)
 
-    print "result", lvalue
     return lvalue
 
 
@@ -382,7 +391,7 @@ def match_node_test(node, context):
     elif node.children[0].type == 'node_type' and lookup_field == 'node':
         return context['meta'].type == context['meta'].TYPE_MESSAGE
     else:
-        return get_string(node.children[0]) == context['meta'].name
+        return lookup_field == context['meta'].name
 
 
 def get_string(ast_node):
@@ -427,23 +436,33 @@ def _evaluate(ast_node, context):
     return chain.from_iterable((_match_path(c, context) for c in ast_node.children))
 
 
-def query(msg, xpath):
-    '''Evaluates PbQuery expressions (XPath-like queries)'''
+def compile(xpath):
+    '''Compiles a PbQuery expressions (XPath-like queries) into an AST representation'''
+    ast = Parser().parse(xpath)
 
-    result_set = []
-
-    ast = Parser().parse(path)
     if isinstance(ast, waxeye.ParseError):
         raise InvalidQueryException(str(ast))
     else:
-        msg.DESCRIPTOR.TYPE_MESSAGE = 11
-        msg.DESCRIPTOR.LABEL_REQUIRED = 2
-        msg.DESCRIPTOR.type = msg.DESCRIPTOR.TYPE_MESSAGE
-        msg.DESCRIPTOR.label = msg.DESCRIPTOR.LABEL_REQUIRED
+        return ast
 
-        node_context = {'meta' = msg.DESCRIPTOR, 'value' = msg, 'pos' = 1, 'size' = 1}
 
-        result_set = _evaluate(ast, node_context)
+def query(msg, xpath):
+    '''Evaluates PbQuery expression strings (XPath-like queries) or already AST compiled queries'''
+
+    ast = None
+    if isinstance(xpath, str):
+        ast = compile(path)
+    else:
+        ast = xpath
+
+    msg.DESCRIPTOR.TYPE_MESSAGE = 11
+    msg.DESCRIPTOR.LABEL_REQUIRED = 2
+    msg.DESCRIPTOR.type = msg.DESCRIPTOR.TYPE_MESSAGE
+    msg.DESCRIPTOR.label = msg.DESCRIPTOR.LABEL_REQUIRED
+
+    node_context = {'meta' = msg.DESCRIPTOR, 'value' = msg, 'pos' = 1, 'size' = 1}
+
+    result_set = _evaluate(ast, node_context)
 
     return [node['value'] for node in result_set]
 
