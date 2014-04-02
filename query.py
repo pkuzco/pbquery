@@ -25,7 +25,7 @@ axes = {
 
 
 matchers = {
-    'path'                  : lambda node, context: match_path(node, context),
+    'path'                  : lambda node, context: _match_path(node, context),
     'node_test'             : lambda node, context: match_node_test(node, context),
     'predicate'             : lambda node, context: eval_predicate(node, context),
     'predicate_expr'        : lambda node, context: matchers[node.children[0].type](node.children[0], context),
@@ -451,7 +451,7 @@ def query(msg, xpath):
 
     ast = None
     if isinstance(xpath, str):
-        ast = compile(path)
+        ast = compile(xpath)
     else:
         ast = xpath
 
@@ -460,7 +460,7 @@ def query(msg, xpath):
     msg.DESCRIPTOR.type = msg.DESCRIPTOR.TYPE_MESSAGE
     msg.DESCRIPTOR.label = msg.DESCRIPTOR.LABEL_REQUIRED
 
-    node_context = {'meta' = msg.DESCRIPTOR, 'value' = msg, 'pos' = 1, 'size' = 1}
+    node_context = {'meta': msg.DESCRIPTOR, 'value': msg, 'pos': 1, 'size': 1}
 
     result_set = _evaluate(ast, node_context)
 
